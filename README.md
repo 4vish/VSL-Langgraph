@@ -73,22 +73,65 @@ strictly before the guarded side effect) holds because `gated_node` calls
 (a subclass of `AutomationDeniedException`), which `gated_node` also
 catches.
 
+## Sample agents
+
+`examples/` is organized by domain -- see [examples/README.md](examples/README.md)
+for the full list and the roadmap for domains not built yet. Two so far:
+
+**`examples/financial-agents/purchase_approval_agent.py`** chains both
+governance primitives in one graph, synthetic and LLM-free, to show how
+they actually differ in behavior:
+
+- a `PreNode` ("purchase-confidence") -- soft, threshold-based: a monitor's
+  confidence signal must clear the robust Gamma threshold
+- an `Invariant` ("purchase-hard-cap") -- non-bypassable: the amount must
+  never exceed a fixed cap, no matter how confident the monitor is
+
+```
+python examples/financial-agents/purchase_approval_agent.py
+```
+
+runs three scenarios against a real compiled `StateGraph`: approved,
+blocked by low confidence, and -- the interesting one -- blocked by the
+hard cap even when confidence is high, proving the `Invariant` can't be
+talked past by a passing `PreNode`. `tests/test_purchase_approval_agent.py`
+asserts the same three outcomes.
+
+**`examples/marketing/research_publish_agent.py`** is the same gate-wiring
+pattern behind five real LLM calls across three providers -- Gemini
+(research), OpenAI (draft), and three different Claude models (fact-check,
+compliance review, final editorial), gated the same way as above. Falls
+back to canned responses automatically with no API keys set:
+
+```
+python examples/marketing/research_publish_agent.py
+```
+
 ## Layout
 
 ```
 src/vsl_langgraph/
 ├── adapter.py       LangGraphAdapter (VSLAdapter conformance contract)
 └── integration.py   gated_node, route_on_denial (StateGraph wiring)
+examples/
+├── README.md                 domain taxonomy and roadmap
+├── financial-agents/
+│   └── purchase_approval_agent.py   PreNode + Invariant, no LLM calls
+└── marketing/
+    ├── research_publish_agent.py    same pattern, 5 real LLM calls / 3 providers
+    ├── providers.py, fake_providers.py, model_ids.py
 tests/
-├── test_conformance.py   run_conformance_suite(LangGraphAdapter()) == []
-└── test_integration.py   exercises a real compiled StateGraph
+├── test_conformance.py            run_conformance_suite(LangGraphAdapter()) == []
+├── test_integration.py            exercises a real compiled StateGraph
+└── test_purchase_approval_agent.py   exercises the financial-agents sample's three scenarios
 ```
 
 ## Status
 
 Alpha. Conformance-suite green; integration tested against a real
 `StateGraph` for both the `PreNode` and `Invariant` paths (pass-through and
-denial routing). Not yet tested against a real multi-node agent graph, and
+denial routing), including a chained multi-gate graph in the sample agent.
+Not yet tested against an LLM-driven agent graph with real tool calls, and
 `gated_node` doesn't implement `Fallback`'s retry/intervention fields
 (`delta_factor`, `max_retries`, `intervention`) -- those aren't consumed by
 `vsl-core`'s own `PlainPythonReferenceAdapter` either, so this mirrors the
